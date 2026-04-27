@@ -1,15 +1,30 @@
 /**
- * Email Service - Sends OTP emails via SMTP backend
+ * Email Service - Sends OTP emails via Netlify Functions
  * 
  * SETUP:
- * 1. cd server && npm install
- * 2. Create server/.env with your SMTP credentials
- * 3. npm start (starts SMTP server on port 3001)
- * 4. Frontend will automatically use SMTP instead of simulation
+ * 1. Add SMTP credentials to Netlify Environment Variables:
+ *    - SMTP_HOST (default: smtp.gmail.com)
+ *    - SMTP_PORT (default: 587)
+ *    - SMTP_USER (your email)
+ *    - SMTP_PASS (your app password)
+ * 2. Deploy to Netlify - functions are auto-deployed
+ * 3. Frontend will automatically use real email instead of simulation
+ * 
+ * For local development with separate SMTP server:
+ * Set VITE_SMTP_API_URL=http://localhost:3001 in .env
  */
 
-// SMTP Backend API URL
-const SMTP_API_URL = import.meta.env.VITE_SMTP_API_URL || 'http://localhost:3001'
+// SMTP Backend API URL - Netlify Functions or custom SMTP server
+const SMTP_API_URL = import.meta.env.VITE_SMTP_API_URL || ''
+
+// Determine the base URL for API calls
+const getBaseUrl = () => {
+  // If custom SMTP server URL is set, use it
+  if (SMTP_API_URL) return SMTP_API_URL
+  
+  // Otherwise use Netlify Functions (same origin)
+  return ''
+}
 
 /**
  * Send OTP code to user's email via SMTP backend
@@ -22,7 +37,7 @@ export const sendOTPEmail = async (toEmail, otpCode, userName = '') => {
   try {
     console.log('Sending OTP via SMTP backend...')
     
-    const response = await fetch(`${SMTP_API_URL}/api/send-otp`, {
+    const response = await fetch(`${getBaseUrl()}/.netlify/functions/send-otp`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -54,7 +69,7 @@ export const sendOTPEmail = async (toEmail, otpCode, userName = '') => {
  */
 export const isEmailServiceAvailable = async () => {
   try {
-    const response = await fetch(`${SMTP_API_URL}/api/health`, {
+    const response = await fetch(`${getBaseUrl()}/.netlify/functions/health`, {
       method: 'GET',
       signal: AbortSignal.timeout(3000) // 3 second timeout
     })
