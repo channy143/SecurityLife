@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SecureLife</string>
+    <string name="title_activity_main">SecureLife</string>
+    <string name="package_name">com.securelife.app</string>
+    <string name="custom_url_scheme">com.securelife.app</string>
+</resources>

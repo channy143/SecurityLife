@@ -11,7 +11,7 @@ import './styles/index.css'
  */
 const Layout = () => {
   const location = useLocation()
-  const hideNavFooter = ['/login', '/register'].includes(location.pathname)
+  const hideNavFooter = ['/login', '/register', '/forgot-password', '/reset-password'].includes(location.pathname)
 
   return (
     <div className="min-h-screen flex flex-col">

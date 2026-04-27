@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Shield, Eye, EyeOff, ArrowLeft, CheckCircle, Lock, AlertTriangle } from 'lucide-react'
-import { updatePassword } from '../services/authService'
 import { validatePassword } from '../utils/passwordUtils'
 import Loader from '../components/common/Loader'
 import PasswordStrengthBar from '../components/password/PasswordStrengthBar'
@@ -19,6 +18,7 @@ const ResetPassword = () => {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [hasRecoveryToken, setHasRecoveryToken] = useState(false)
+  const [checkingToken, setCheckingToken] = useState(true)
   
   const navigate = useNavigate()
 
@@ -26,43 +26,54 @@ const ResetPassword = () => {
 
   // Process recovery token from URL hash on mount
   useEffect(() => {
-    const processRecovery = async () => {
-      // Check for hash fragment (contains recovery tokens)
-      const hash = window.location.hash
+    // Listen for auth state changes - Supabase will emit SIGNED_IN when it parses the recovery token
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth state change:', event, session ? 'has session' : 'no session')
       
-      if (hash && (hash.includes('type=recovery') || hash.includes('access_token'))) {
-        // Supabase will automatically parse the hash when we call getSession
-        const { data: { session }, error } = await supabase.auth.getSession()
-        
+      if (event === 'SIGNED_IN' && session) {
+        console.log('Recovery session established via auth state change')
+        setHasRecoveryToken(true)
+        setCheckingToken(false)
+      } else if (event === 'INITIAL_SESSION') {
+        // Check if we have a session
+        if (session) {
+          console.log('Initial session found')
+          setHasRecoveryToken(true)
+        }
+        setCheckingToken(false)
+      }
+    })
+
+    // Also check for hash and try to get session immediately
+    const hash = window.location.hash
+    if (hash && (hash.includes('type=recovery') || hash.includes('access_token'))) {
+      console.log('Found recovery hash in URL')
+      // Force Supabase to parse the hash by calling getSession
+      supabase.auth.getSession().then(({ data: { session }, error }) => {
         if (error) {
-          console.error('Recovery session error:', error)
+          console.error('Error getting session:', error)
           setError('Invalid or expired reset link. Please request a new password reset.')
           setHasRecoveryToken(false)
         } else if (session) {
-          console.log('Recovery session established')
+          console.log('Session found via getSession')
           setHasRecoveryToken(true)
-        } else {
-          setHasRecoveryToken(false)
         }
-      } else {
-        // No hash present - user came here directly
-        setHasRecoveryToken(false)
-      }
+        setCheckingToken(false)
+      })
+    } else {
+      console.log('No recovery hash found')
+      setCheckingToken(false)
+      setHasRecoveryToken(false)
     }
-    
-    processRecovery()
+
+    return () => {
+      subscription?.unsubscribe()
+    }
   }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-
-    // Check if we have a valid recovery session
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) {
-      setError('Your reset link has expired or is invalid. Please request a new password reset.')
-      return
-    }
 
     // Validate passwords match
     if (password !== confirmPassword) {
@@ -80,22 +91,27 @@ const ResetPassword = () => {
     setLoading(true)
 
     try {
-      const { error: updateError } = await updatePassword(password)
+      // Directly call supabase.auth.updateUser
+      const { data, error: updateError } = await supabase.auth.updateUser({
+        password: password,
+      })
 
       if (updateError) {
+        console.error('Update password error:', updateError)
         setError(updateError.message || 'Failed to update password. Please try again.')
         setLoading(false)
         return
       }
 
+      console.log('Password updated successfully:', data)
       setSuccess(true)
       // Redirect to login after 3 seconds
       setTimeout(() => {
         navigate('/login')
       }, 3000)
     } catch (err) {
+      console.error('Reset password exception:', err)
       setError('An unexpected error occurred. Please try again.')
-      console.error('Reset password error:', err)
     } finally {
       setLoading(false)
     }
@@ -236,7 +252,7 @@ const ResetPassword = () => {
             </motion.div>
           )}
 
-          {!hasRecoveryToken && !error && (
+          {!checkingToken && !hasRecoveryToken && (
             <motion.div 
               className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl mb-6 flex items-start gap-3"
               initial={{ opacity: 0, y: -10 }}
@@ -246,7 +262,7 @@ const ResetPassword = () => {
               <div>
                 <p className="font-medium">Invalid or Expired Link</p>
                 <p className="text-sm mt-1">
-                  This reset link may have expired. Please{' '}
+                  This reset link may have expired or is invalid. Please{' '}
                   <Link to="/forgot-password" className="underline font-semibold hover:text-amber-900">
                     request a new one
                   </Link>.
@@ -330,7 +346,7 @@ const ResetPassword = () => {
 
             <motion.button
               type="submit"
-              disabled={loading || !hasRecoveryToken}
+              disabled={loading || checkingToken || !hasRecoveryToken}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-4 rounded-xl font-semibold hover:bg-slate-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl mt-8"

@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Shield, Mail, CheckCircle, ArrowRight, Eye, EyeOff, UserPlus } from 'lucide-react'
-import { signUp } from '../services/authService'
+import { Shield, Mail, CheckCircle, ArrowRight, Eye, EyeOff, UserPlus, AlertTriangle, Loader2 } from 'lucide-react'
+import { signUp, resendConfirmationEmail } from '../services/authService'
 import { validatePassword } from '../utils/passwordUtils'
+import { isSupabaseConfigured } from '../services/supabaseClient'
 import Loader from '../components/common/Loader'
 import PasswordStrengthBar from '../components/password/PasswordStrengthBar'
 import { calculatePasswordStrength } from '../utils/passwordUtils'
@@ -18,11 +19,39 @@ const Register = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [supabaseReady, setSupabaseReady] = useState(true)
+  const [resending, setResending] = useState(false)
+  const [resendMessage, setResendMessage] = useState('')
+  const [emailConfirmed, setEmailConfirmed] = useState(false)
 
   const navigate = useNavigate()
 
+  // Check if Supabase is configured
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      setSupabaseReady(false)
+      setError('Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY environment variables.')
+    }
+  }, [])
+
   // Calculate password strength for display
   const { score, strength } = calculatePasswordStrength(password)
+
+  // Handle resend confirmation email
+  const handleResendConfirmation = async () => {
+    setResending(true)
+    setResendMessage('')
+    
+    const { error } = await resendConfirmationEmail(email)
+    
+    if (error) {
+      setResendMessage(`Failed to resend: ${error.message}`)
+    } else {
+      setResendMessage('Confirmation email resent! Please check your inbox.')
+    }
+    
+    setResending(false)
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -56,10 +85,15 @@ const Register = () => {
 
       if (data?.user) {
         setSuccess(true)
-        // Redirect to login after 10 seconds (give time to check email)
+        // Check if email is already confirmed (confirmation disabled in Supabase)
+        const isConfirmed = data.user.email_confirmed_at !== null
+        setEmailConfirmed(isConfirmed)
+        
+        // Redirect faster if email is already confirmed
+        const redirectDelay = isConfirmed ? 3000 : 10000
         setTimeout(() => {
           navigate('/login')
-        }, 10000)
+        }, redirectDelay)
       }
     } catch (err) {
       setError('An unexpected error occurred. Please try again.')
@@ -94,51 +128,91 @@ const Register = () => {
                 <h2 className="text-2xl font-bold text-white tracking-tight">Account Created</h2>
               </div>
               
-              {/* Email Confirmation Message */}
+              {/* Success Message - Conditional based on email confirmation */}
               <div className="p-8 text-center">
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.3 }}
                 >
-                  <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Mail className="w-8 h-8 text-blue-600" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-slate-900 mb-2">
-                    Confirm Your Email
-                  </h3>
-                  <p className="text-slate-600 mb-6">
-                    We've sent a confirmation link to <strong>{email}</strong>. Please check your inbox and click the link to activate your account.
-                  </p>
-                  
-                  {/* Action Buttons */}
-                  <div className="space-y-3">
-                    <button
-                      onClick={() => window.open('https://mail.google.com', '_blank')}
-                      className="w-full flex items-center justify-center gap-2 bg-primary-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-primary-700 transition-colors"
-                    >
-                      <Mail className="w-5 h-5" />
-                      Open Gmail
-                    </button>
-                    
-                    <button
-                      onClick={() => navigate('/login')}
-                      className="w-full flex items-center justify-center gap-2 border-2 border-slate-200 text-slate-700 px-6 py-3 rounded-xl font-semibold hover:border-primary-600 hover:text-primary-600 transition-colors"
-                    >
-                      Go to Login
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                  
-                  <p className="text-sm text-slate-500 mt-6">
-                    Didn't receive the email? Check your spam folder or{' '}
-                    <button 
-                      onClick={() => {/* TODO: Add resend logic */}}
-                      className="text-primary-600 hover:underline font-medium"
-                    >
-                      resend confirmation
-                    </button>
-                  </p>
+                  {emailConfirmed ? (
+                    // Email already confirmed - show simple success
+                    <>
+                      <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <CheckCircle className="w-8 h-8 text-green-600" />
+                      </div>
+                      <h3 className="text-xl font-semibold text-slate-900 mb-2">
+                        Ready to Go!
+                      </h3>
+                      <p className="text-slate-600 mb-6">
+                        Your account <strong>{email}</strong> has been created and is ready to use.
+                      </p>
+                      
+                      <button
+                        onClick={() => navigate('/login')}
+                        className="w-full flex items-center justify-center gap-2 bg-primary-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-primary-700 transition-colors"
+                      >
+                        Go to Login
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </>
+                  ) : (
+                    // Email not confirmed - show confirmation message
+                    <>
+                      <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Mail className="w-8 h-8 text-blue-600" />
+                      </div>
+                      <h3 className="text-xl font-semibold text-slate-900 mb-2">
+                        Confirm Your Email
+                      </h3>
+                      <p className="text-slate-600 mb-6">
+                        We've sent a confirmation link to <strong>{email}</strong>. Please check your inbox and click the link to activate your account.
+                      </p>
+                      
+                      {/* Action Buttons */}
+                      <div className="space-y-3">
+                        <button
+                          onClick={() => window.open('https://mail.google.com', '_blank')}
+                          className="w-full flex items-center justify-center gap-2 bg-primary-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-primary-700 transition-colors"
+                        >
+                          <Mail className="w-5 h-5" />
+                          Open Gmail
+                        </button>
+                        
+                        <button
+                          onClick={() => navigate('/login')}
+                          className="w-full flex items-center justify-center gap-2 border-2 border-slate-200 text-slate-700 px-6 py-3 rounded-xl font-semibold hover:border-primary-600 hover:text-primary-600 transition-colors"
+                        >
+                          Go to Login
+                          <ArrowRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                      
+                      {resendMessage && (
+                        <p className={`text-sm mt-4 ${resendMessage.includes('Failed') ? 'text-red-600' : 'text-green-600'}`}>
+                          {resendMessage}
+                        </p>
+                      )}
+                      
+                      <p className="text-sm text-slate-500 mt-6">
+                        Didn't receive the email? Check your spam folder or{' '}
+                        <button 
+                          onClick={handleResendConfirmation}
+                          disabled={resending}
+                          className="text-primary-600 hover:underline font-medium disabled:opacity-50"
+                        >
+                          {resending ? (
+                            <span className="flex items-center gap-1">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              Sending...
+                            </span>
+                          ) : (
+                            'resend confirmation'
+                          )}
+                        </button>
+                      </p>
+                    </>
+                  )}
                 </motion.div>
               </div>
             </div>
@@ -232,12 +306,23 @@ const Register = () => {
 
           {error && (
             <motion.div 
-              className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-6 flex items-center gap-2"
+              className={`${!supabaseReady ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-red-50 border-red-200 text-red-700'} border px-4 py-3 rounded-xl mb-6 flex items-start gap-3`}
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
             >
-              <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
-              {error}
+              {!supabaseReady ? (
+                <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              ) : (
+                <span className="w-1.5 h-1.5 bg-red-500 rounded-full mt-2" />
+              )}
+              <div className="text-sm">
+                {error}
+                {!supabaseReady && (
+                  <p className="mt-2 text-xs opacity-75">
+                    To fix this, add your Supabase credentials in your Netlify/Vercel environment variables or .env file.
+                  </p>
+                )}
+              </div>
             </motion.div>
           )}
 
@@ -334,9 +419,9 @@ const Register = () => {
 
             <motion.button
               type="submit"
-              disabled={loading}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              disabled={loading || !supabaseReady}
+              whileHover={{ scale: supabaseReady ? 1.02 : 1 }}
+              whileTap={{ scale: supabaseReady ? 0.98 : 1 }}
               className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-4 rounded-xl font-semibold hover:bg-slate-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl mt-8"
             >
               {loading ? <Loader size="small" /> : (

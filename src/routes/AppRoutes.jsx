@@ -5,6 +5,8 @@ import ProtectedRoute from '../components/common/ProtectedRoute'
 import Home from '../pages/Home'
 import Login from '../pages/Login'
 import Register from '../pages/Register'
+import ForgotPassword from '../pages/ForgotPassword'
+import ResetPassword from '../pages/ResetPassword'
 import OTPVerification from '../pages/OTPVerification'
 import PasswordChecker from '../pages/PasswordChecker'
 import CyberHygiene from '../pages/CyberHygiene'
@@ -21,6 +23,8 @@ const AppRoutes = () => {
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/otp" element={<OTPVerification />} />
       
       {/* Semi-Public Routes - Available without auth but enhanced with auth */}
